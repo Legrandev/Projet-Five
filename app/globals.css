@@ -11,7 +11,8 @@ body {
   padding: 0;
   overflow: hidden;
   /* ADIEU LE SCROLL */
-  background-color: #000000;
+  /* background-color: #000000; */
+  /* COMMENTÉ - bloquait l'arrière-plan de la page de connexion */
 }
 
 /* Utilitaires pour centrer */

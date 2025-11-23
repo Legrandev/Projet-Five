@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     // AJOUT DE suppressHydrationWarning ICI
     <html lang="fr" suppressHydrationWarning>
-      <body className={`${inter.className} bg-[#121212] text-white antialiased h-screen w-screen overflow-hidden`}>
+      <body className={`${inter.className} text-white antialiased h-screen w-screen overflow-hidden`}>
         <Providers>{children}</Providers>
       </body>
     </html>

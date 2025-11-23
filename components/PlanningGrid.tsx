@@ -3,15 +3,15 @@
 import { useState, useEffect, Fragment } from "react";
 import { ChevronLeft, ChevronRight, Save, Copy, Loader2, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import ConfirmModal from "./ConfirmModal";
 
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const DAYS = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"];
-const MATCH_SIZE = 1;
+const MATCH_SIZE = 10;
 
 type UserInfo = { name: string | null; image: string | null };
 type SlotData = { users: UserInfo[]; count: number };
 
-// Nouvelle prop pour communiquer avec la Navbar
 // Nouvelle prop pour communiquer avec la Navbar
 export type GoldenSlot = { day: string; hour: number; date: Date };
 
@@ -29,6 +29,10 @@ export default function PlanningGrid({ onUpdateStats }: PlanningGridProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ dayIndex: number; hour: number } | null>(null);
   const [dragEnd, setDragEnd] = useState<{ dayIndex: number; hour: number } | null>(null);
+
+  // États pour le modal de confirmation
+  const [modalOpen, setModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "apply" | null>(null);
 
   useEffect(() => { fetchDispos(); }, [currentMonday]);
 
@@ -144,10 +148,19 @@ export default function PlanningGrid({ onUpdateStats }: PlanningGridProps) {
   };
 
   const handleAction = async (action: "save" | "apply") => {
-    if (!confirm(action === "save" ? "Sauvegarder ce modèle ?" : "Appliquer le modèle ?")) return;
-    setLoadingAction(action);
-    const body: any = { action };
-    if (action === "save") {
+    console.log("🔵 handleAction appelé avec action:", action);
+    setPendingAction(action);
+    setModalOpen(true);
+    console.log("🔵 Modal state set to true, modalOpen should be:", true);
+  };
+
+  const executeAction = async () => {
+    if (!pendingAction) return;
+    console.log("🟢 executeAction appelé avec pendingAction:", pendingAction);
+
+    setLoadingAction(pendingAction);
+    const body: any = { action: pendingAction };
+    if (pendingAction === "save") {
       const slotsToSave = [];
       for (let i = 0; i < 7; i++) {
         const date = addDays(currentMonday, i);
@@ -162,8 +175,9 @@ export default function PlanningGrid({ onUpdateStats }: PlanningGridProps) {
       body.mondayDate = formatDateLocal(currentMonday);
     }
     await fetch("/api/template", { method: "POST", body: JSON.stringify(body) });
-    if (action === "apply") await fetchDispos();
+    if (pendingAction === "apply") await fetchDispos();
     setLoadingAction(null);
+    setPendingAction(null);
   };
 
   const changeWeek = (dir: number) => {
@@ -202,149 +216,177 @@ export default function PlanningGrid({ onUpdateStats }: PlanningGridProps) {
     exit: (dir: number) => ({ x: dir > 0 ? -50 : 50, opacity: 0 }),
   };
 
+  console.log("🟣 Rendering PlanningGrid - modalOpen:", modalOpen, "pendingAction:", pendingAction);
+
   return (
-    <div className="w-full h-full bg-[#121212] rounded-[32px] border border-[#222] flex flex-col overflow-hidden shadow-2xl relative select-none">
+    <>
+      <div className="w-full h-full bg-[#121212] rounded-[32px] border border-[#222] flex flex-col overflow-hidden shadow-2xl relative select-none">
 
-      {/* HEADER GRILLE */}
-      <div className="flex items-center justify-between px-6 py-3 bg-[#181818] border-b border-[#282828] shrink-0">
-        <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-xl border border-white/5">
-          <button onClick={() => changeWeek(-1)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition"><ChevronLeft size={18} /></button>
-          <div className="flex items-center gap-2 px-2">
-            <Calendar size={14} className="text-[#1ED760]" />
-            <span className="text-sm font-bold text-white uppercase tracking-wider min-w-[140px] text-center">
-              {currentMonday.toLocaleDateString("fr-FR", { month: "long", day: "numeric" })}
-            </span>
-          </div>
-          <button onClick={() => changeWeek(1)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition"><ChevronRight size={18} /></button>
-        </div>
-
-        <div className="flex gap-3">
-          <ActionButton onClick={() => handleAction("save")} loading={loadingAction === "save"} label="Sauver Modèle" icon={<Save size={14} />} />
-          <ActionButton onClick={() => handleAction("apply")} loading={loadingAction === "apply"} label="Appliquer" icon={<Copy size={14} />} primary />
-        </div>
-      </div>
-
-      {/* ZONE GRILLE */}
-      <div className="flex-1 relative w-full h-full overflow-hidden bg-[#0F0F0F]">
-        <AnimatePresence mode="wait" custom={direction}>
-          <motion.div
-            key={currentMonday.toISOString()}
-            custom={direction}
-            variants={slideVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="absolute inset-0 w-full h-full"
-          >
-            <div className="w-full h-full grid grid-cols-[60px_repeat(7,1fr)] grid-rows-[50px_repeat(16,minmax(0,0.9fr))] divide-x divide-y divide-[#222]">
-              <div className="bg-[#141414]"></div>
-
-              {/* En-têtes Jours */}
-              {DAYS.map((day, i) => {
-                const date = addDays(currentMonday, i);
-                const isToday = new Date().toDateString() === date.toDateString();
-                return (
-                  <div key={day} className={`flex flex-col items-center justify-center ${isToday ? 'bg-[#1C1C1C]' : 'bg-[#141414]'}`}>
-                    <span className={`text-[10px] font-bold tracking-widest mb-1 ${isToday ? 'text-[#1ED760]' : 'text-gray-500'}`}>{day}</span>
-                    <span className={`text-lg font-bold ${isToday ? 'text-white' : 'text-gray-400'}`}>{date.getDate()}</span>
-                  </div>
-                );
-              })}
-
-              {/* Corps */}
-              {HOURS.map((hour) => (
-                <Fragment key={hour}>
-                  <div className="bg-[#141414] flex items-center justify-center text-[11px] font-mono text-gray-600 font-medium select-none pointer-events-none">{hour}h</div>
-
-                  {DAYS.map((_, i) => {
-                    const date = addDays(currentMonday, i);
-                    const dateStr = formatDateLocal(date);
-                    const key = `${dateStr}-${hour}`;
-
-                    const isSelectedReal = mySlots.includes(key);
-                    const isDragZone = isInDragZone(i, hour);
-                    const isSelected = isDragZone ? !isSelectedReal : isSelectedReal;
-
-                    const details = slotDetails[key] || { users: [], count: 0 };
-                    const count = details.count;
-                    const isFull = count >= MATCH_SIZE;
-                    const isGold = isGoldenSlot(dateStr, hour);
-
-                    let bgClass = "bg-transparent hover:bg-[#1E1E1E]";
-                    let extraClasses = "";
-
-                    if (isGold) {
-                      extraClasses = "golden-slot";
-                      bgClass = ""; // La classe golden-slot gère le background via l'animation
-                    } else if (isFull) {
-                      bgClass = "bg-red-500/10 hover:bg-red-500/20";
-                    } else if (isSelected) {
-                      bgClass = "bg-[#1ED760] hover:bg-[#1ed760]/90";
-                    } else if (count > 0) {
-                      bgClass = "bg-[#222] hover:bg-[#2A2A2A]";
-                    }
-
-                    if (isDragZone) bgClass = "bg-[#1ED760]/50";
-
-                    return (
-                      <div
-                        key={key}
-                        onMouseDown={() => onMouseDown(i, hour)}
-                        onMouseEnter={() => onMouseEnter(i, hour)}
-                        className={`relative cursor-pointer transition-colors duration-75 group ${bgClass} ${extraClasses}`}
-                      >
-                        {count > 0 && (
-                          <div className="w-full h-full flex items-center justify-center pointer-events-none">
-                            <span className={`text-sm font-bold ${isSelected || isGold ? 'text-black' : (isFull ? 'text-red-500' : 'text-white')}`}>
-                              {count}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* TOOLTIP MIS A JOUR : Photos minuscules (w-3 h-3) et compactes */}
-                        {count > 0 && !isDragging && (
-                          <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
-                            <div className="bg-[#1A1A1A] border border-[#333] p-3 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] min-w-[200px] flex flex-col gap-3">
-                              <div className="flex justify-between items-center border-b border-[#333] pb-2">
-                                <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">JOUEURS</span>
-                                {isGold ? (
-                                  <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest animate-pulse">MATCH 3H</span>
-                                ) : (
-                                  <span className={`text-[10px] font-black ${isFull ? 'text-red-500' : 'text-[#1ED760]'}`}>
-                                    {count}/{MATCH_SIZE}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto custom-scrollbar">
-                                {details.users.map((u, idx) => (
-                                  <div key={idx} className="flex items-center gap-8">
-                                    {/* Logo utilisateur */}
-                                    <img
-                                      src={u.image || ""}
-                                      className="w-0.5 h-0.5 rounded-full bg-black object-cover flex-shrink-0"
-                                      alt="u"
-                                      style={{ width: '50px', height: '50px' }}
-                                    />
-                                    <span className="text-[14px] text-gray-300 font-bold truncate ml-16">{u.name}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="w-3 h-3 bg-[#1A1A1A] border-r border-b border-[#333] rotate-45 absolute left-1/2 -translate-x-1/2 -bottom-1.5"></div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </Fragment>
-              ))}
+        {/* HEADER GRILLE */}
+        <div className="flex items-center justify-between px-6 py-3 bg-[#181818] border-b border-[#282828] shrink-0">
+          <div className="flex items-center gap-4 bg-black/40 p-1.5 rounded-xl border border-white/5">
+            <button onClick={() => changeWeek(-1)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition"><ChevronLeft size={18} /></button>
+            <div className="flex items-center gap-2 px-2">
+              <Calendar size={14} className="text-[#1ED760]" />
+              <span className="text-sm font-bold text-white uppercase tracking-wider min-w-[140px] text-center">
+                {currentMonday.toLocaleDateString("fr-FR", { month: "long", day: "numeric" })}
+              </span>
             </div>
-          </motion.div>
-        </AnimatePresence>
+            <button onClick={() => changeWeek(1)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition"><ChevronRight size={18} /></button>
+          </div>
+
+          <div className="flex gap-3">
+            <ActionButton onClick={() => handleAction("save")} loading={loadingAction === "save"} label="Sauver Modèle" icon={<Save size={14} />} />
+            <ActionButton onClick={() => handleAction("apply")} loading={loadingAction === "apply"} label="Appliquer" icon={<Copy size={14} />} primary />
+          </div>
+        </div>
+
+        {/* ZONE GRILLE */}
+        <div className="flex-1 relative w-full h-full overflow-hidden bg-[#0F0F0F]">
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={currentMonday.toISOString()}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="absolute inset-0 w-full h-full"
+            >
+              <div className="w-full h-full grid grid-cols-[60px_repeat(7,1fr)] grid-rows-[50px_repeat(16,minmax(0,0.9fr))] divide-x divide-y divide-[#222]">
+                <div className="bg-[#141414]"></div>
+
+                {/* En-têtes Jours */}
+                {DAYS.map((day, i) => {
+                  const date = addDays(currentMonday, i);
+                  const isToday = new Date().toDateString() === date.toDateString();
+                  return (
+                    <div key={day} className={`flex flex-col items-center justify-center ${isToday ? 'bg-[#1C1C1C]' : 'bg-[#141414]'}`}>
+                      <span className={`text-[10px] font-bold tracking-widest mb-1 ${isToday ? 'text-[#1ED760]' : 'text-gray-500'}`}>{day}</span>
+                      <span className={`text-lg font-bold ${isToday ? 'text-white' : 'text-gray-400'}`}>{date.getDate()}</span>
+                    </div>
+                  );
+                })}
+
+                {/* Corps */}
+                {HOURS.map((hour) => (
+                  <Fragment key={hour}>
+                    <div className="bg-[#141414] flex items-center justify-center text-[11px] font-mono text-gray-600 font-medium select-none pointer-events-none">{hour}h</div>
+
+                    {DAYS.map((_, i) => {
+                      const date = addDays(currentMonday, i);
+                      const dateStr = formatDateLocal(date);
+                      const key = `${dateStr}-${hour}`;
+
+                      const isSelectedReal = mySlots.includes(key);
+                      const isDragZone = isInDragZone(i, hour);
+                      const isSelected = isDragZone ? !isSelectedReal : isSelectedReal;
+
+                      const details = slotDetails[key] || { users: [], count: 0 };
+                      const count = details.count;
+                      const isFull = count >= MATCH_SIZE;
+                      const isGold = isGoldenSlot(dateStr, hour);
+
+                      let bgClass = "bg-transparent hover:bg-[#1E1E1E]";
+                      let extraClasses = "";
+
+                      // Priorité : Golden slot > Sélectionné > Plein > Avec des gens > Vide
+                      // MAIS : si c'est sélectionné ET golden, on montre quand même le golden
+                      if (isGold) {
+                        // Créneau fait partie d'un match de 3h
+                        extraClasses = "golden-slot";
+                        bgClass = ""; // La classe golden-slot gère le background via l'animation
+                      } else if (isSelected) {
+                        // Créneau sélectionné par moi (et PAS dans un golden slot)
+                        bgClass = "bg-[#1ED760] hover:bg-[#1ed760]/90";
+                      } else if (isFull) {
+                        // Créneau plein mais pas golden et pas sélectionné par moi
+                        bgClass = "bg-red-500/10 hover:bg-red-500/20";
+                      } else if (count > 0) {
+                        // Créneau avec du monde mais pas plein
+                        bgClass = "bg-[#222] hover:bg-[#2A2A2A]";
+                      }
+
+                      if (isDragZone) bgClass = "bg-[#1ED760]/50";
+
+                      return (
+                        <div
+                          key={key}
+                          onMouseDown={() => onMouseDown(i, hour)}
+                          onMouseEnter={() => onMouseEnter(i, hour)}
+                          className={`relative cursor-pointer transition-colors duration-75 group ${bgClass} ${extraClasses}`}
+                        >
+                          {count > 0 && (
+                            <div className="w-full h-full flex items-center justify-center pointer-events-none">
+                              <span className={`text-sm font-bold ${isSelected || isGold ? 'text-black' : (isFull ? 'text-red-500' : 'text-white')}`}>
+                                {count}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* TOOLTIP MIS A JOUR : Photos minuscules (w-3 h-3) et compactes */}
+                          {count > 0 && !isDragging && (
+                            <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
+                              <div className="bg-[#1A1A1A] border border-[#333] p-3 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] min-w-[200px] flex flex-col gap-3">
+                                <div className="flex justify-between items-center border-b border-[#333] pb-2">
+                                  <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">JOUEURS</span>
+                                  {isGold ? (
+                                    <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest animate-pulse">MATCH 3H</span>
+                                  ) : (
+                                    <span className={`text-[10px] font-black ${isFull ? 'text-red-500' : 'text-[#1ED760]'}`}>
+                                      {count}/{MATCH_SIZE}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto custom-scrollbar">
+                                  {details.users.map((u, idx) => (
+                                    <div key={idx} className="flex items-center gap-8">
+                                      {/* Logo utilisateur */}
+                                      <img
+                                        src={u.image || ""}
+                                        className="w-0.5 h-0.5 rounded-full bg-black object-cover flex-shrink-0"
+                                        alt="u"
+                                        style={{ width: '50px', height: '50px' }}
+                                      />
+                                      <span className="text-[14px] text-gray-300 font-bold truncate ml-16">{u.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="w-3 h-3 bg-[#1A1A1A] border-r border-b border-[#333] rotate-45 absolute left-1/2 -translate-x-1/2 -bottom-1.5"></div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
-    </div>
+
+      {/* Modal de confirmation */}
+      <ConfirmModal
+        isOpen={modalOpen}
+        onClose={() => {
+          console.log("🔴 Modal fermé");
+          setModalOpen(false);
+          setPendingAction(null);
+        }}
+        onConfirm={executeAction}
+        title={pendingAction === "save" ? "Sauvegarder le Modèle" : "Appliquer le Modèle"}
+        message={
+          pendingAction === "save"
+            ? "Voulez-vous sauvegarder cette semaine comme modèle de référence ?"
+            : "Voulez-vous appliquer le modèle sauvegardé à cette semaine ?"
+        }
+        type={pendingAction || "save"}
+      />
+    </>
   );
 }
 
